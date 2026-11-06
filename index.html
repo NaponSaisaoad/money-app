@@ -75,6 +75,13 @@ button{cursor:pointer}
 .add .i{background:var(--in-soft);color:var(--in)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .card h2{font-size:15px;margin:0 0 10px;font-weight:600;color:var(--muted)}
+.insight{margin:0 0 12px;font-size:15px;line-height:1.6}
+.up{color:var(--out)} .down{color:var(--in)}
+.bar small{font-size:12px;margin-left:4px;font-variant-numeric:tabular-nums}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));max-width:456px;margin:0 auto;background:var(--ink);color:var(--surface);border-radius:14px;padding:10px 10px 10px 14px;display:none;align-items:center;gap:8px;z-index:9;font-size:15px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.toast.on{display:flex}
+.toast span{flex:1;min-width:0}
+.toast button{border:0;background:transparent;color:var(--accent);font-weight:600;padding:8px 6px;filter:brightness(1.6)}
 .bars{display:flex;flex-direction:column;gap:9px}
 .bar .t{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
 .bar .track{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
@@ -299,7 +306,7 @@ var KW={
   ["สุขภาพ",["ยา","หมอ","โรงพยาบาล","คลินิก","ฟิตเนส","วิตามิน","ทำฟัน","หาหมอ","ตรวจสุขภาพ"]],
   ["บันเทิง",["หนัง","เกม","เที่ยว","เหล้า","เบียร์","คอนเสิร์ต","netflix","youtube","spotify","คาราโอเกะ","ปาร์ตี้","สังสรรค์"]],
   ["ช้อปปิ้ง",["เสื้อ","กางเกง","รองเท้า","กระเป๋า","shopee","ช้อปปี้","lazada","ลาซาด้า","ช้อป","ซื้อของออนไลน์","เครื่องสำอาง","นาฬิกา"]],
-  ["ของใช้",["สบู่","ยาสีฟัน","แชมพู","ผงซักฟอก","ทิชชู่","ของใช้","ซักผ้า","น้ำยา","แก๊ส","ถ่าน","ตลาด","ห้าง","บิ๊กซี","โลตัส","แม็คโคร"]],
+  ["ของใช้",["เก้าอี้","โต๊ะ","ที่นอน","หมอน","จาน","แก้วน้ำ","สบู่","ยาสีฟัน","แชมพู","ผงซักฟอก","ทิชชู่","ของใช้","ซักผ้า","น้ำยา","แก๊ส","ถ่าน","ตลาด","ห้าง","บิ๊กซี","โลตัส","แม็คโคร"]],
   ["อาหาร",["กิน","ข้าว","อาหาร","กาแฟ","ชานม","ชาเย็น","น้ำดื่ม","น้ำเปล่า","ขนม","ก๋วยเตี๋ยว","มื้อ","เช้า","เที่ยง","เย็น","ส้มตำ","หมูกระทะ","ชาบู","บุฟเฟ่ต์","ไก่ทอด","พิซซ่า","เซเว่น","7-11","ร้านอาหาร","เดลิเวอรี่","ไลน์แมน","foodpanda","กับข้าว","ผลไม้"]]
  ],
  in:[
@@ -312,13 +319,41 @@ var KW={
 };
 var INCOME_WORDS=["เงินเดือน","โบนัส","ค่าจ้าง","ค่าแรง","รายรับ","ได้เงิน","ได้รับ","รับเงิน","ขายได้","ขายของ","โอนเข้า","เงินเข้า","ได้คืน","คืนเงิน","ถูกหวย","ปันผล","ดอกเบี้ย","ลูกค้าโอน","แม่ให้","พ่อให้","ได้มา"];
 function has(t,w){return t.indexOf(w)>-1}
+function normT(raw){return raw.replace(/[๐-๙]/g,function(c){return "๐๑๒๓๔๕๖๗๘๙".indexOf(c)}).toLowerCase()}
+var UNIT_RE=/^\s*(จาน|แก้ว|ชิ้น|อัน|ห่อ|ถุง|คน|ขวด|กล่อง|ลิตร|โล|กิโล|ตัว|ที่|ชาม|ลูก|ใบ|คู่|วัน|เดือน|ปี|ครั้ง|รอบ|มื้อ|โมง|ทุ่ม|ชั่วโมง|นาที|เล่ม|แพ็ค|โหล|ไม้|หลัง|คัน|%|-\d)/;
+// หาตัวเลขที่เป็นจำนวนเงิน ข้ามเลขที่ตามด้วยหน่วย เช่น 2 จาน
+function findAmounts(t){
+  var re=/(\d[\d,]*(?:\.\d+)?)\s*(k|พัน|หมื่น|แสน)?\s*(บาท)?/g,m,out=[];
+  while((m=re.exec(t))){
+    var after=t.slice(m.index+m[1].length);
+    if(m.index>0&&/[-\/:]/.test(t.charAt(m.index-1)))continue;
+    if(!m[2]&&!m[3]&&UNIT_RE.test(after))continue;
+    var v=parseFloat(m[1].replace(/,/g,""))*({k:1000,"พัน":1000,"หมื่น":10000,"แสน":100000}[m[2]]||1);
+    if(v>0)out.push({i:m.index,end:m.index+m[0].length,v:v,txt:m[0]});
+  }
+  if(!out.length){var w=thaiWordsNum(t);if(w){var i=t.indexOf(w.w),e=i+w.w.length,b=t.slice(e).match(/^\s*บาท/);out.push({i:i,end:e+(b?b[0].length:0),v:w.v,txt:t.slice(i,e+(b?b[0].length:0))})}}
+  return out;
+}
+// "ข้าวมันไก่ 60 กาแฟ 55" -> 2 รายการ
+function splitItems(raw){
+  var t=normT(raw),am=findAmounts(t);
+  if(am.length<2)return [parseText(raw)];
+  var shift=has(t,"เมื่อวานซืน")?" เมื่อวานซืน":has(t,"เมื่อวาน")?" เมื่อวาน":"";
+  var res=[],start=0;
+  am.forEach(function(a,k){
+    var end=k===am.length-1?raw.length:a.end;
+    var seg=raw.slice(start,end).replace(/^[\s,+]+|^(และ|แล้วก็)\s*/g,"").trim();
+    start=end;
+    if(seg)res.push(parseText(seg+shift));
+  });
+  return res;
+}
 function parseText(raw){
-  var t=raw.replace(/[๐-๙]/g,function(c){return "๐๑๒๓๔๕๖๗๘๙".indexOf(c)}).toLowerCase();
+  var t=normT(raw);
   var r={t:"out",amt:"",cat:"",date:today(),note:""};
   // จำนวนเงิน
-  var m=t.match(/(\d[\d,]*(?:\.\d+)?)\s*(k|พัน|หมื่น|แสน)?/),numTxt="";
-  if(m){var v=parseFloat(m[1].replace(/,/g,""));var mul={k:1000,"พัน":1000,"หมื่น":10000,"แสน":100000}[m[2]]||1;r.amt=String(v*mul);numTxt=m[0]}
-  else{var w=thaiWordsNum(t);if(w){r.amt=String(w.v);numTxt=w.w}}
+  var am=findAmounts(t),numTxt="";
+  if(am.length){var a=am[am.length-1];r.amt=String(a.v);numTxt=a.txt}
   // วันที่
   var dd=new Date();
   if(has(t,"เมื่อวานซืน")){dd.setDate(dd.getDate()-2)}else if(has(t,"เมื่อวาน")){dd.setDate(dd.getDate()-1)}
@@ -343,10 +378,36 @@ function parseText(raw){
   return r;
 }
 function quick(text){
-  var r=parseText(text);
-  var q=document.getElementById("q");if(q){q.value="";q.blur()}
-  openSheet(r,"เข้าใจว่า: “"+text+"” ตรวจแล้วกดบันทึก");
+  var list=splitItems(text);
+  var q=document.getElementById("q");if(q){q.value=""}
+  var miss=list.filter(function(r){return !(parseFloat(r.amt)>0)});
+  if(miss.length){if(q)q.blur();openSheet(miss[0],"ไม่เจอจำนวนเงินใน “"+text+"” ใส่ตัวเลขแล้วกดบันทึก");return}
+  var now=Date.now(),added=[];
+  list.forEach(function(r,k){
+    var it={id:now.toString(36)+k+Math.random().toString(36).slice(2,5),t:r.t,amt:Math.round(parseFloat(r.amt)*100)/100,cat:r.cat,date:r.date,note:r.note,ts:now+k,u:now+k};
+    state.items.push(it);added.push(it);
+  });
+  if(added[0].date.slice(0,7)!==ym){ym=added[0].date.slice(0,7);try{sessionStorage.setItem("ym",ym)}catch(e){}}
+  persist();
+  showToast(added);
 }
+/* แถบแจ้งหลังจด มีปุ่มเลิกทำ */
+var toast=document.createElement("div");toast.className="toast";toast.setAttribute("role","status");document.body.appendChild(toast);
+var toastTimer=null;
+function showToast(added){
+  var txt=added.map(function(x){return x.cat+" "+(x.t==="in"?"+":"−")+"฿"+money(x.amt)}).join(", ");
+  toast.innerHTML='<span>จดแล้ว'+(added.length>1?" "+added.length+" รายการ":"")+': '+esc(txt)+'</span><button id="t-undo">เลิกทำ</button>'+(added.length===1?'<button id="t-edit">แก้</button>':'');
+  toast.classList.add("on");
+  clearTimeout(toastTimer);toastTimer=setTimeout(hideToast,6000);
+  document.getElementById("t-undo").onclick=function(){
+    var ids={};added.forEach(function(x){ids[x.id]=1;state.deleted.push({id:x.id,at:Date.now()})});
+    state.items=state.items.filter(function(x){return !ids[x.id]});
+    hideToast();persist();
+  };
+  var ed=document.getElementById("t-edit");
+  if(ed)ed.onclick=function(){hideToast();var it=state.items.find(function(x){return x.id===added[0].id});if(it)openSheet(it)};
+}
+function hideToast(){toast.classList.remove("on")}
 
 /* ---------- หน้าหลัก ---------- */
 var root=document.getElementById("root");
@@ -362,18 +423,32 @@ function render(){
   var bal=tin-tout;
   h+='<div class="summary"><div><div class="lbl">คงเหลือเดือนนี้</div><div class="bal num">'+(bal<0?"−":"")+"฿"+money(Math.abs(bal))+'</div></div>'+
      '<div class="row"><div><span>รายรับ</span><strong class="num">฿'+money(tin)+'</strong></div><div><span>รายจ่าย</span><strong class="num">฿'+money(tout)+'</strong></div></div></div>';
-  h+='<form class="quick" id="qf"><input id="q" enterkeyhint="go" autocomplete="off" placeholder="พูดหรือพิมพ์ เช่น กินข้าวเที่ยง 50 บาท" aria-label="พูดหรือพิมพ์รายการ">'+
+  h+='<form class="quick" id="qf"><input id="q" enterkeyhint="go" autocomplete="off" placeholder="พิมพ์แล้วกด Enter เช่น ข้าวมันไก่ 60 กาแฟ 55" aria-label="พูดหรือพิมพ์รายการ">'+
      (SR?'<button type="button" class="mic'+(listening?" on":"")+'" id="mic" aria-label="กดแล้วพูด"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1A7 7 0 0 0 19 12h-2z"/></svg></button>':'')+
      '</form>'+(listening?'<div class="hint center">กำลังฟัง… พูดได้เลย</div>':'');
   if(mode!=="ro")h+='<div class="add"><button class="o" id="addOut">+ รายจ่าย</button><button class="i" id="addIn">+ รายรับ</button></div>';
 
+  // เทียบเดือนก่อน (ถ้าเป็นเดือนปัจจุบัน เทียบช่วงวันที่เท่ากัน)
+  var py=m===1?y-1:y,pm=m===1?12:m-1,pym=py+"-"+pad(pm),isNow=ym===today().slice(0,7),upto=isNow?+today().slice(8,10):31;
+  var prevCat={},prevOut=0;
+  state.items.forEach(function(x){if(x.t==="out"&&x.date.slice(0,7)===pym&&+x.date.slice(8,10)<=upto){prevOut+=x.amt;prevCat[x.cat]=(prevCat[x.cat]||0)+x.amt}});
   var cats=Object.keys(byCat).sort(function(a,b){return byCat[b]-byCat[a]});
   if(cats.length){
     var max=byCat[cats[0]];
-    h+='<div class="card"><h2>จ่ายไปกับอะไรบ้าง</h2><div class="bars">';
+    h+='<div class="card"><h2>เงินไปไหนบ้าง</h2>';
+    if(prevOut>0){
+      var diff=tout-prevOut,ch=Object.keys(Object.assign({},byCat,prevCat)).map(function(c){return {c:c,d:(byCat[c]||0)-(prevCat[c]||0)}}).sort(function(a,b){return Math.abs(b.d)-Math.abs(a.d)});
+      var top=ch[0],per=isNow?"ช่วงวันที่ 1–"+upto+" ของ"+MONTHS[pm-1]:MONTHS[pm-1];
+      var sent=Math.abs(diff)<1?"จ่ายพอ ๆ กับ"+per:"จ่าย"+(diff>0?"มากกว่า":"น้อยกว่า")+per+" <b class=\"num "+(diff>0?"up":"down")+"\">฿"+money(Math.abs(diff))+"</b>";
+      if(top&&Math.abs(top.d)>=1&&Math.abs(diff)>=1)sent+=" ส่วนใหญ่มาจาก<b>"+esc(top.c)+"</b> ("+(top.d>0?"+":"−")+"฿"+money(Math.abs(top.d))+")";
+      h+='<p class="insight">'+sent+'</p>';
+    }
+    h+='<div class="bars">';
     cats.forEach(function(c){
       var pct=tout?Math.round(byCat[c]/tout*100):0;
-      h+='<div class="bar"><div class="t"><span>'+esc(c)+'</span><span class="num">฿'+money(byCat[c])+' · '+pct+'%</span></div><div class="track"><div class="fill" style="width:'+(byCat[c]/max*100)+'%"></div></div></div>';
+      var dl=prevOut>0?(byCat[c]-(prevCat[c]||0)):0;
+      var dtag=prevOut>0&&Math.abs(dl)>=1?' <small class="'+(dl>0?"up":"down")+'">'+(dl>0?"▲":"▼")+money(Math.abs(dl))+'</small>':'';
+      h+='<div class="bar"><div class="t"><span>'+esc(c)+dtag+'</span><span class="num">฿'+money(byCat[c])+' · '+pct+'%</span></div><div class="track"><div class="fill" style="width:'+(byCat[c]/max*100)+'%"></div></div></div>';
     });
     h+='</div></div>';
   }
