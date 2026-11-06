@@ -296,6 +296,27 @@ function bindCloud(){
     fb.disconnect(user.uid,connector).then(function(){connector=null;render()},function(e){connErr="ยกเลิกไม่สำเร็จ: "+(e.code||e.message);render()})});
 }
 
+function backup(){
+  var blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="รายรับรายจ่าย-"+today()+".json";
+  document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);
+}
+function restore(file){
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var d=JSON.parse(r.result);if(!d||!Array.isArray(d.items))throw 0;
+      var have={};state.items.forEach(function(x){have[x.id]=1});
+      if(d.custom)["out","in"].forEach(function(t){(d.custom[t]||[]).forEach(function(k){if(catsOf(t).indexOf(k)<0)state.custom[t].push(k)})});
+      state.customU=Date.now();
+      var n=0;d.items.forEach(function(x){if(x&&x.id&&!have[x.id]&&x.amt>0&&x.date){if(!x.u)x.u=Date.now();state.items.push(x);n++}});
+      persist();status="นำเข้า "+n+" รายการ";render();
+    }catch(e){status="ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอปนี้";render()}
+  };
+  r.readAsText(file);
+}
+if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(function(){})}
+
 /* ---------- พูด/พิมพ์ แล้วแยกให้เอง ---------- */
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition||null;
 var listening=false,rec=null;
