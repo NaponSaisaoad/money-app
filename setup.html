@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เชื่อม Google Sheets</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&display=swap" rel="stylesheet">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#eef1f4;--surface:#fff;--ink:#18212b;--muted:#66727f;--line:#dbe1e7;--accent:#2d4a8a;--font:"IBM Plex Sans Thai",system-ui,sans-serif;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#10151b;--surface:#19212a;--ink:#e7ecf1;--muted:#93a0ad;--line:#2a3541;--accent:#8fb0f0;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);line-height:1.65}
+main{max-width:560px;margin:0 auto;padding:20px 16px 60px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:22px;margin:0;text-wrap:balance}
+.back{color:var(--accent);text-decoration:none}
+ol{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:12px}
+li{counter-increment:s;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 14px 14px 52px;position:relative}
+li::before{content:counter(s);position:absolute;left:14px;top:14px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--bg);display:grid;place-items:center;font-weight:600;font-size:14px}
+b{font-weight:600}
+.k{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 6px;white-space:nowrap}
+.btn{display:inline-block;border:0;border-radius:10px;padding:10px 16px;background:var(--accent);color:var(--bg);font:inherit;font-weight:600;cursor:pointer;text-decoration:none;margin-top:8px}
+pre{max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;margin:8px 0 0}
+.note{color:var(--muted);font-size:14px}
+.warn{background:var(--surface);border-left:4px solid #d39b2a;border-radius:10px;padding:12px 14px;font-size:15px}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="./">‹ กลับไปแอป</a>
+<h1>เชื่อมแอปกับ Google Sheets</h1>
+<p class="note">ทำครั้งเดียว ประมาณ 5 นาที ทำในคอมจะง่ายกว่า เสร็จแล้วทุกรายการที่จดจะไปอยู่ในชีตของคุณเอง ล้างเครื่องข้อมูลก็ไม่หาย</p>
+<ol>
+<li>เปิด <a href="https://sheets.new" target="_blank" rel="noopener">sheets.new</a> เพื่อสร้างชีตใหม่ แล้วตั้งชื่อ เช่น <b>บัญชีรายรับรายจ่าย</b></li>
+<li>ในชีตนั้น กดเมนู <span class="k">ส่วนขยาย</span> แล้วเลือก <span class="k">Apps Script</span></li>
+<li>ลบโค้ดเดิมในหน้านั้นออกให้หมด แล้ววางโค้ดนี้แทน จากนั้นกดไอคอนบันทึก (รูปแผ่นดิสก์)
+<br><button class="btn" id="cp">คัดลอกโค้ด</button>
+<pre id="code">// บัญชีรายรับรายจ่าย: สคริปต์รับข้อมูลจากแอปมาลงชีตนี้
+// วางทั้งหมดนี้แทนโค้ดเดิมใน Apps Script แล้วกด &quot;ทำให้ใช้งานได้&quot; เป็นเว็บแอป
+
+var SHEET = &#x27;รายการ&#x27;;
+var DEL = &#x27;_ลบแล้ว&#x27;;
+var CFG = &#x27;_ตั้งค่า&#x27;;
+var HEAD = [&#x27;วันที่&#x27;, &#x27;ประเภท&#x27;, &#x27;หมวด&#x27;, &#x27;จำนวนเงิน&#x27;, &#x27;โน้ต&#x27;, &#x27;id&#x27;, &#x27;สร้างเมื่อ&#x27;, &#x27;แก้ล่าสุด&#x27;];
+
+function doGet() {
+  return out_({ ok: true, app: &#x27;money-app&#x27; });
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var req = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var tz = ss.getSpreadsheetTimeZone();
+    var sh = sheet_(ss, SHEET, HEAD);
+    var dl = sheet_(ss, DEL, [&#x27;id&#x27;, &#x27;ลบเมื่อ&#x27;]);
+    var cf = sheet_(ss, CFG, [&#x27;key&#x27;, &#x27;value&#x27;]);
+
+    // ของเดิมในชีต
+    var map = {};
+    if (sh.getLastRow() &gt; 1) {
+      sh.getRange(2, 1, sh.getLastRow() - 1, HEAD.length).getValues().forEach(function (r) {
+        if (!r[5]) return;
+        var d = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, &#x27;yyyy-MM-dd&#x27;) : String(r[0]);
+        map[r[5]] = {
+          id: String(r[5]), date: d, t: r[1] === &#x27;รายรับ&#x27; ? &#x27;in&#x27; : &#x27;out&#x27;, cat: String(r[2]),
+          amt: Number(r[3]), note: String(r[4] || &#x27;&#x27;), ts: Number(r[6]) || 0, u: Number(r[7]) || 0
+        };
+      });
+    }
+    var deleted = {};
+    if (dl.getLastRow() &gt; 1) {
+      dl.getRange(2, 1, dl.getLastRow() - 1, 1).getValues().forEach(function (r) { if (r[0]) deleted[r[0]] = 1; });
+    }
+
+    // รายการที่ลบจากแอป
+    var newDel = [];
+    (req.deleted || []).forEach(function (d) {
+      if (d &amp;&amp; d.id &amp;&amp; !deleted[d.id]) { deleted[d.id] = 1; newDel.push([d.id, new Date(d.at || Date.now())]); }
+    });
+    if (newDel.length) dl.getRange(dl.getLastRow() + 1, 1, newDel.length, 2).setValues(newDel);
+    Object.keys(deleted).forEach(function (id) { delete map[id]; });
+
+    // รายการจากแอป เอาอันที่แก้ล่าสุด
+    (req.items || []).forEach(function (x) {
+      if (!x || !x.id || deleted[x.id] || !(x.amt &gt; 0)) return;
+      var old = map[x.id];
+      if (!old || (x.u || 0) &gt; (old.u || 0)) {
+        map[x.id] = { id: x.id, date: x.date, t: x.t === &#x27;in&#x27; ? &#x27;in&#x27; : &#x27;out&#x27;, cat: x.cat, amt: x.amt, note: x.note || &#x27;&#x27;, ts: x.ts || 0, u: x.u || 0 };
+      }
+    });
+
+    // เขียนชีตใหม่ เรียงวันล่าสุดขึ้นก่อน
+    var list = Object.keys(map).map(function (k) { return map[k]; });
+    list.sort(function (a, b) { return a.date &lt; b.date ? 1 : a.date &gt; b.date ? -1 : b.ts - a.ts; });
+    if (sh.getLastRow() &gt; 1) sh.getRange(2, 1, sh.getLastRow() - 1, HEAD.length).clearContent().setFontColor(null);
+    if (list.length) {
+      var rows = list.map(function (x) {
+        return [x.date, x.t === &#x27;in&#x27; ? &#x27;รายรับ&#x27; : &#x27;รายจ่าย&#x27;, x.cat, x.amt, x.note, x.id, x.ts, x.u];
+      });
+      sh.getRange(2, 1, rows.length, HEAD.length).setValues(rows);
+      sh.getRange(2, 1, rows.length, 1).setNumberFormat(&#x27;yyyy-mm-dd&#x27;);
+      sh.getRange(2, 4, rows.length, 1).setNumberFormat(&#x27;#,##0.00&#x27;);
+      sh.getRange(2, 2, rows.length, 1).setFontColors(rows.map(function (r) { return [r[1] === &#x27;รายรับ&#x27; ? &#x27;#1d7f4e&#x27; : &#x27;#c0392b&#x27;]; }));
+    }
+
+    // หมวดที่ตั้งเอง
+    var cfgv = {};
+    if (cf.getLastRow() &gt; 1) cf.getRange(2, 1, cf.getLastRow() - 1, 2).getValues().forEach(function (r) { cfgv[r[0]] = r[1]; });
+    var custom = cfgv.custom ? JSON.parse(cfgv.custom) : { out: [], in: [] };
+    var customU = Number(cfgv.customU) || 0;
+    if ((req.customU || 0) &gt; customU &amp;&amp; req.custom) {
+      custom = req.custom; customU = req.customU;
+      cf.getRange(2, 1, 2, 2).setValues([[&#x27;custom&#x27;, JSON.stringify(custom)], [&#x27;customU&#x27;, String(customU)]]);
+    }
+
+    return out_({ ok: true, items: list, deleted: Object.keys(deleted), custom: custom, customU: customU });
+  } catch (err) {
+    return out_({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sheet_(ss, name, head) {
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight(&#x27;bold&#x27;);
+    sh.setFrozenRows(1);
+    if (name.charAt(0) === &#x27;_&#x27;) sh.hideSheet();
+    if (name === SHEET) { sh.hideColumns(6, 3); sh.setColumnWidth(5, 220); }
+    var first = ss.getSheets()[0];
+    if (name === SHEET &amp;&amp; first.getName() !== SHEET &amp;&amp; first.getLastRow() === 0) ss.deleteSheet(first);
+  }
+  return sh;
+}
+
+function out_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+</pre></li>
+<li>กดปุ่มสีน้ำเงิน <span class="k">ทำให้ใช้งานได้</span> (Deploy) ที่มุมขวาบน แล้วเลือก <span class="k">การทำให้ใช้งานได้รายการใหม่</span> กดรูปเฟืองแล้วเลือก <span class="k">เว็บแอป</span> จากนั้นตั้งค่า:
+<br>เรียกใช้ในฐานะ: <b>ฉัน</b>
+<br>ผู้ที่มีสิทธิ์เข้าถึง: <b>ทุกคน</b>
+<br>แล้วกด <span class="k">ทำให้ใช้งานได้</span></li>
+<li>Google จะขอสิทธิ์ ให้กด <span class="k">ให้สิทธิ์เข้าถึง</span> แล้วเลือกบัญชีของคุณ ถ้าขึ้นว่า "Google ยังไม่ได้ยืนยันแอปนี้" ให้กด <span class="k">ขั้นสูง</span> แล้วกด <span class="k">ไปที่ … (ไม่ปลอดภัย)</span> ตามด้วย <span class="k">อนุญาต</span>
+<br><span class="note">ขึ้นแบบนี้เพราะเป็นสคริปต์ที่คุณสร้างเองในบัญชีตัวเอง ไม่ได้ส่งให้ Google ตรวจ สคริปต์นี้แก้ได้แค่ชีตนี้ชีตเดียว</span></li>
+<li>คัดลอก <b>URL ของเว็บแอป</b> (ขึ้นต้น https://script.google.com/macros/s/ ลงท้าย /exec) แล้วส่งเข้าโทรศัพท์ เช่นส่ง LINE หาตัวเอง</li>
+<li>เปิดแอปในโทรศัพท์ เลื่อนลงไปที่การ์ด <b>Google Sheets</b> กด <span class="k">เชื่อม Google Sheets</span> วางลิงก์ แล้วกด <span class="k">เชื่อม</span> รายการที่จดไว้แล้วจะขึ้นชีตทันที</li>
+</ol>
+<div class="warn">เก็บลิงก์ /exec ไว้คนเดียว ใครได้ลิงก์นี้ไปจะเขียนลงชีตของคุณได้ ถ้าใช้หลายเครื่อง (เช่นโทรศัพท์ของคุณกับของแฟน) ให้วางลิงก์เดียวกันในทุกเครื่อง ข้อมูลจะรวมกันในชีตเดียว</div>
+<p class="note">แก้ตัวเลขในชีตตรง ๆ ไม่ได้ เพราะแอปจะเขียนทับ ให้แก้ในแอปแทน ส่วนการทำกราฟหรือสรุปเพิ่มเองในชีตใหม่ทำได้ตามสบาย</p>
+</main>
+<script>
+document.getElementById("cp").addEventListener("click",function(){
+  var b=this,t=document.getElementById("code").textContent;
+  function ok(){b.textContent="คัดลอกแล้ว"}
+  function fb(){var r=document.createRange();r.selectNodeContents(document.getElementById("code"));var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand("copy");ok()}catch(e){b.textContent="กดค้างที่โค้ดแล้วเลือกคัดลอก"}}
+  if(navigator.clipboard)navigator.clipboard.writeText(t).then(ok,fb);else fb();
+});
+</script>
+</body>
+</html>

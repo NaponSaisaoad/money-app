@@ -1,5 +1,5 @@
-var C="money-app-v1";
-var FILES=["./","index.html","manifest.json","icon-192.png","icon-512.png","icon-180.png"];
+var C="money-app-v2";
+var FILES=["./","index.html","manifest.json","icon-192.png","icon-512.png","icon-180.png","setup.html"];
 self.addEventListener("install",function(e){e.waitUntil(caches.open(C).then(function(c){return c.addAll(FILES)}));self.skipWaiting()});
 self.addEventListener("activate",function(e){e.waitUntil(caches.keys().then(function(k){return Promise.all(k.filter(function(n){return n!==C}).map(function(n){return caches.delete(n)}))}));self.clients.claim()});
 self.addEventListener("fetch",function(e){
