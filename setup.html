@@ -41,7 +41,7 @@ pre{max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--l
 var SHEET = &#x27;รายการ&#x27;;
 var DEL = &#x27;_ลบแล้ว&#x27;;
 var CFG = &#x27;_ตั้งค่า&#x27;;
-var HEAD = [&#x27;วันที่&#x27;, &#x27;ประเภท&#x27;, &#x27;หมวด&#x27;, &#x27;จำนวนเงิน&#x27;, &#x27;โน้ต&#x27;, &#x27;id&#x27;, &#x27;สร้างเมื่อ&#x27;, &#x27;แก้ล่าสุด&#x27;];
+var HEAD = [&#x27;วันที่&#x27;, &#x27;ประเภท&#x27;, &#x27;หมวด&#x27;, &#x27;จำนวนเงิน&#x27;, &#x27;โน้ต&#x27;, &#x27;id&#x27;, &#x27;สร้างเมื่อ&#x27;, &#x27;แก้ล่าสุด&#x27;, &#x27;ที่มา&#x27;];
 
 function doGet() {
   return out_({ ok: true, app: &#x27;money-app&#x27; });
@@ -66,7 +66,7 @@ function doPost(e) {
         var d = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, &#x27;yyyy-MM-dd&#x27;) : String(r[0]);
         map[r[5]] = {
           id: String(r[5]), date: d, t: r[1] === &#x27;รายรับ&#x27; ? &#x27;in&#x27; : &#x27;out&#x27;, cat: String(r[2]),
-          amt: Number(r[3]), note: String(r[4] || &#x27;&#x27;), ts: Number(r[6]) || 0, u: Number(r[7]) || 0
+          amt: Number(r[3]), note: String(r[4] || &#x27;&#x27;), ts: Number(r[6]) || 0, u: Number(r[7]) || 0, src: r[8] === &#x27;Claude&#x27; ? &#x27;claude&#x27; : &#x27;&#x27;
         };
       });
     }
@@ -88,7 +88,7 @@ function doPost(e) {
       if (!x || !x.id || deleted[x.id] || !(x.amt &gt; 0)) return;
       var old = map[x.id];
       if (!old || (x.u || 0) &gt; (old.u || 0)) {
-        map[x.id] = { id: x.id, date: x.date, t: x.t === &#x27;in&#x27; ? &#x27;in&#x27; : &#x27;out&#x27;, cat: x.cat, amt: x.amt, note: x.note || &#x27;&#x27;, ts: x.ts || 0, u: x.u || 0 };
+        map[x.id] = { id: x.id, date: x.date, t: x.t === &#x27;in&#x27; ? &#x27;in&#x27; : &#x27;out&#x27;, cat: x.cat, amt: x.amt, note: x.note || &#x27;&#x27;, ts: x.ts || 0, u: x.u || 0, src: x.src || (old &amp;&amp; old.src) || &#x27;&#x27; };
       }
     });
 
@@ -98,7 +98,7 @@ function doPost(e) {
     if (sh.getLastRow() &gt; 1) sh.getRange(2, 1, sh.getLastRow() - 1, HEAD.length).clearContent().setFontColor(null);
     if (list.length) {
       var rows = list.map(function (x) {
-        return [x.date, x.t === &#x27;in&#x27; ? &#x27;รายรับ&#x27; : &#x27;รายจ่าย&#x27;, x.cat, x.amt, x.note, x.id, x.ts, x.u];
+        return [x.date, x.t === &#x27;in&#x27; ? &#x27;รายรับ&#x27; : &#x27;รายจ่าย&#x27;, x.cat, x.amt, x.note, x.id, x.ts, x.u, x.src === &#x27;claude&#x27; ? &#x27;Claude&#x27; : &#x27;&#x27;];
       });
       sh.getRange(2, 1, rows.length, HEAD.length).setValues(rows);
       sh.getRange(2, 1, rows.length, 1).setNumberFormat(&#x27;yyyy-mm-dd&#x27;);

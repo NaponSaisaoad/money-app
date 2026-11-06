@@ -4,7 +4,7 @@
 var SHEET = 'รายการ';
 var DEL = '_ลบแล้ว';
 var CFG = '_ตั้งค่า';
-var HEAD = ['วันที่', 'ประเภท', 'หมวด', 'จำนวนเงิน', 'โน้ต', 'id', 'สร้างเมื่อ', 'แก้ล่าสุด'];
+var HEAD = ['วันที่', 'ประเภท', 'หมวด', 'จำนวนเงิน', 'โน้ต', 'id', 'สร้างเมื่อ', 'แก้ล่าสุด', 'ที่มา'];
 
 function doGet() {
   return out_({ ok: true, app: 'money-app' });
@@ -29,7 +29,7 @@ function doPost(e) {
         var d = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]);
         map[r[5]] = {
           id: String(r[5]), date: d, t: r[1] === 'รายรับ' ? 'in' : 'out', cat: String(r[2]),
-          amt: Number(r[3]), note: String(r[4] || ''), ts: Number(r[6]) || 0, u: Number(r[7]) || 0
+          amt: Number(r[3]), note: String(r[4] || ''), ts: Number(r[6]) || 0, u: Number(r[7]) || 0, src: r[8] === 'Claude' ? 'claude' : ''
         };
       });
     }
@@ -51,7 +51,7 @@ function doPost(e) {
       if (!x || !x.id || deleted[x.id] || !(x.amt > 0)) return;
       var old = map[x.id];
       if (!old || (x.u || 0) > (old.u || 0)) {
-        map[x.id] = { id: x.id, date: x.date, t: x.t === 'in' ? 'in' : 'out', cat: x.cat, amt: x.amt, note: x.note || '', ts: x.ts || 0, u: x.u || 0 };
+        map[x.id] = { id: x.id, date: x.date, t: x.t === 'in' ? 'in' : 'out', cat: x.cat, amt: x.amt, note: x.note || '', ts: x.ts || 0, u: x.u || 0, src: x.src || (old && old.src) || '' };
       }
     });
 
@@ -61,7 +61,7 @@ function doPost(e) {
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, HEAD.length).clearContent().setFontColor(null);
     if (list.length) {
       var rows = list.map(function (x) {
-        return [x.date, x.t === 'in' ? 'รายรับ' : 'รายจ่าย', x.cat, x.amt, x.note, x.id, x.ts, x.u];
+        return [x.date, x.t === 'in' ? 'รายรับ' : 'รายจ่าย', x.cat, x.amt, x.note, x.id, x.ts, x.u, x.src === 'claude' ? 'Claude' : ''];
       });
       sh.getRange(2, 1, rows.length, HEAD.length).setValues(rows);
       sh.getRange(2, 1, rows.length, 1).setNumberFormat('yyyy-mm-dd');

@@ -75,6 +75,7 @@ button{cursor:pointer}
 .add .i{background:var(--in-soft);color:var(--in)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .card h2{font-size:15px;margin:0 0 10px;font-weight:600;color:var(--muted)}
+.src{font-style:normal;font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:0 6px;margin-left:4px;vertical-align:middle}
 .insight{margin:0 0 12px;font-size:15px;line-height:1.6}
 .up{color:var(--out)} .down{color:var(--in)}
 .bar small{font-size:12px;margin-left:4px;font-variant-numeric:tabular-nums}
@@ -466,7 +467,7 @@ function render(){
       var label=d===today()?"วันนี้":DAYS[dd.getDay()]+" "+dd.getDate()+" "+MS[dd.getMonth()];
       h+='<div class="day"><div class="dayhead"><span>'+label+'</span><span class="num">'+(net<0?"−":"+")+"฿"+money(Math.abs(net))+'</span></div>';
       list.forEach(function(x){
-        h+='<button class="item" data-id="'+x.id+'"><span class="tag '+x.t+'">'+esc((x.cat.match(/[ก-ฮA-Za-z0-9]/)||[x.cat.charAt(0)])[0])+'</span><span class="mid"><b>'+esc(x.cat)+'</b>'+(x.note?'<small>'+esc(x.note)+'</small>':"")+'</span><span class="amt num '+x.t+'">'+(x.t==="in"?"+":"−")+"฿"+money(x.amt)+'</span></button>';
+        h+='<button class="item" data-id="'+x.id+'"><span class="tag '+x.t+'">'+esc((x.cat.match(/[ก-ฮA-Za-z0-9]/)||[x.cat.charAt(0)])[0])+'</span><span class="mid"><b>'+esc(x.cat)+(x.src==="claude"?' <i class="src">จาก Claude</i>':'')+'</b>'+(x.note?'<small>'+esc(x.note)+'</small>':"")+'</span><span class="amt num '+x.t+'">'+(x.t==="in"?"+":"−")+"฿"+money(x.amt)+'</span></button>';
       });
       h+='</div>';
     });
