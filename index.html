@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บัญชีรายรับรายจ่าย ย้ายแล้ว</title>
+<style>
+:root{--bg:#eef1f4;--surface:#fff;--ink:#18212b;--muted:#66727f;--accent:#2d4a8a;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#10151b;--surface:#19212a;--ink:#e7ecf1;--muted:#93a0ad;--accent:#8fb0f0;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;line-height:1.65}
+main{max-width:460px;margin:0 auto;padding:40px 16px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:22px;margin:0}
+.btn{display:block;text-align:center;border:0;border-radius:14px;padding:16px;font:inherit;font-weight:600;background:var(--accent);color:var(--bg);text-decoration:none;cursor:pointer}
+.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--muted)}
+p{margin:0;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>แอปย้ายไปที่ใหม่แล้ว</h1>
+<p>ที่ใหม่เข้าสู่ระบบด้วย Gmail ได้ ข้อมูลเก็บบนคลาวด์ ใช้หลายเครื่องได้ และจดผ่าน Claude ได้</p>
+<a class="btn" href="https://thanot-money.web.app/">เปิดแอปที่ใหม่</a>
+<div id="old" hidden>
+<p>เครื่องนี้มีรายการที่จดไว้ในแอปเดิม <b id="n"></b> รายการ กดบันทึกไฟล์สำรอง แล้วไปที่แอปใหม่ เลือก "นำไฟล์สำรองมาใส่"</p>
+<button class="btn ghost" id="bk" style="margin-top:10px">บันทึกไฟล์สำรอง</button>
+</div>
+</main>
+<script>
+try{
+  var d=JSON.parse(localStorage.getItem("money-app-v1"));
+  if(d&&d.items&&d.items.length){
+    document.getElementById("old").hidden=false;document.getElementById("n").textContent=d.items.length;
+    document.getElementById("bk").onclick=function(){var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)],{type:"application/json"}));a.download="รายรับรายจ่าย-สำรอง.json";document.body.appendChild(a);a.click()};
+  }
+}catch(e){}
+if(navigator.serviceWorker)navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister()})});
+</script>
+</body>
+</html>
