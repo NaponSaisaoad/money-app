@@ -106,6 +106,7 @@ label.ghost,a.ghost{cursor:pointer;text-decoration:none}
 .ghost.strong{background:var(--accent);color:#fff;border-color:var(--accent)}
 :root[data-theme="dark"] .ghost.strong{color:#0f1720}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ghost.strong{color:#0f1720}}
+.ghost.slim{padding:6px 12px}
 .hint.bad{color:var(--out)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:var(--in);vertical-align:middle}
 .dot.sending{background:var(--accent)} .dot.offline{background:#d39b2a} .dot.error{background:var(--out)}
@@ -186,88 +187,114 @@ function persist(){
   scheduleSync();
 }
 
-/* ---------- Google Sheets ---------- */
-var SYNC_KEY="money-app-sync";
-var sync=(function(){try{return JSON.parse(localStorage.getItem(SYNC_KEY))||{}}catch(e){return {}}})();
-function saveSyncCfg(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(sync))}catch(e){}}
-var syncing=false,syncAgain=false,syncTimer=null,syncState="",gsOpen=false,gsErr="",gsBusy=false;
-var GS_RE=/^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec\/?$/;
-function scheduleSync(ms){if(!sync.url)return;clearTimeout(syncTimer);syncTimer=setTimeout(doSync,ms==null?800:ms)}
-function doSync(){
-  if(!sync.url)return;
-  if(syncing){syncAgain=true;return}
-  if(navigator.onLine===false){syncState="offline";render();return}
-  syncing=true;syncState="sending";render();
-  var sentAt=Date.now();
-  fetch(sync.url,{method:"POST",body:JSON.stringify({op:"sync",items:state.items,deleted:state.deleted,custom:state.custom,customU:state.customU||0})})
-  .then(function(r){return r.json()})
-  .then(function(res){
-    if(!res||!res.ok)throw new Error((res&&res.error)||"ชีตตอบกลับผิดรูปแบบ");
-    var del={};(res.deleted||[]).forEach(function(id){del[id]=1});
-    var lateDel=state.deleted.filter(function(d){return d.at>sentAt});
-    lateDel.forEach(function(d){del[d.id]=1});
-    var merged={};
-    (res.items||[]).forEach(function(x){if(!del[x.id])merged[x.id]=x});
-    var late=false;
-    state.items.forEach(function(x){if(!del[x.id]&&x.u>sentAt){merged[x.id]=x;late=true}});
-    state.items=Object.keys(merged).map(function(k){return merged[k]});
-    state.deleted=lateDel;
-    if((res.customU||0)>(state.customU||0)&&res.custom){state.custom={out:res.custom.out||[],in:res.custom.in||[]};state.customU=res.customU}
-    saveLocal();
-    sync.last=Date.now();saveSyncCfg();syncState="ok";
-    if(late||lateDel.length)syncAgain=true;
-  })
-  .catch(function(e){syncState=navigator.onLine===false?"offline":"error";gsErr=String(e&&e.message||e)})
-  .then(function(){syncing=false;render();if(syncAgain){syncAgain=false;scheduleSync(300)}});
+/* ---------- บัญชี Google + Firebase ---------- */
+var MCP_BASE="https://money-mcp.naponsaisaoad.workers.dev/";
+var fb=null,user=null,cloudLoaded=false,cloudState="",cloudErr="",authErr="",synced={},syncedCustomU=0,connector=null,connErr="";
+var OWNER_KEY="money-app-owner",SEEN_KEY="money-app-seen";
+function lsGet(k){try{return localStorage.getItem(k)||""}catch(e){return ""}}
+function lsSet(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch(e){}}
+function scheduleSync(){if(fb&&user&&cloudLoaded)pushDiff()}
+function pushDiff(){
+  var puts=[],dels=[],have={};
+  state.items.forEach(function(x){have[x.id]=1;if(synced[x.id]!==x.u)puts.push(x)});
+  Object.keys(synced).forEach(function(id){if(!have[id])dels.push(id)});
+  var cust=(state.customU||0)>syncedCustomU;
+  if(!puts.length&&!dels.length&&!cust)return;
+  puts.forEach(function(x){synced[x.id]=x.u});dels.forEach(function(id){delete synced[id]});
+  if(cust)syncedCustomU=state.customU;
+  fb.write(user.uid,puts,dels,cust?{custom:state.custom,customU:state.customU}:null)
+    .catch(function(e){cloudState="error";cloudErr=String(e&&e.message||e);render()});
 }
-function connectGs(){
-  var v=(document.getElementById("gs-url").value||"").trim();
-  if(!GS_RE.test(v)){gsErr="ลิงก์ไม่ถูก ต้องขึ้นต้น https://script.google.com/macros/s/ และลงท้าย /exec";render();return}
-  gsBusy=true;gsErr="";render();
-  fetch(v).then(function(r){return r.json()}).then(function(res){
-    if(!res||res.app!=="money-app")throw 0;
-    sync.url=v;saveSyncCfg();gsOpen=false;gsBusy=false;doSync();
-  }).catch(function(){gsBusy=false;gsErr="เชื่อมไม่ได้ เช็คว่าตั้ง \"ผู้ที่มีสิทธิ์เข้าถึง\" เป็น \"ทุกคน\" แล้วคัดลอกลิงก์ /exec มาใหม่";render()});
-}
-window.addEventListener("online",function(){scheduleSync(0)});
-document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")scheduleSync(0)});
-function hm(t){var d=new Date(t);return pad(d.getHours())+":"+pad(d.getMinutes())}
-function gsCard(){
-  var h='<div class="card"><h2>Google Sheets</h2>';
-  if(!sync.url){
-    h+='<p class="hint">ยังไม่ได้เชื่อม ข้อมูลอยู่ในเครื่องนี้อย่างเดียว ล้างเครื่องแล้วจะหาย เชื่อมแล้วทุกรายการจะส่งขึ้นชีตของคุณเอง</p>';
-    if(!gsOpen)h+='<div class="foot"><button class="ghost strong" id="gs-open">เชื่อม Google Sheets</button><a class="ghost" href="setup.html">วิธีตั้งค่า (5 นาที)</a></div>';
+function onCloudItems(list,pending,fromCache){
+  if(!cloudLoaded){
+    if(fromCache&&!list.length&&state.items.length)return; // รอข้อมูลจากเซิร์ฟเวอร์ก่อน
+    var o=lsGet(OWNER_KEY),seen=o===user.uid?(+lsGet(SEEN_KEY)||0):0,cloud={};
+    list.forEach(function(x){cloud[x.id]=x});
+    synced={};list.forEach(function(x){synced[x.id]=x.u});
+    if(o&&o!==user.uid){state.items=list}
+    else{
+      var merged=list.slice();
+      state.items.forEach(function(x){
+        var c=cloud[x.id];
+        if(!c){if(x.u>seen)merged.push(x)}            // จดในเครื่องตอนยังไม่ได้ซิงก์
+        else if(x.u>c.u){merged[merged.indexOf(c)]=x} // แก้ในเครื่องใหม่กว่า
+      });
+      state.items=merged;
+    }
+    lsSet(OWNER_KEY,user.uid);cloudLoaded=true;
   }else{
-    var st=syncState==="sending"?"กำลังส่งขึ้นชีต…":syncState==="offline"?"ไม่มีเน็ต จดไว้ในเครื่องก่อน ต่อเน็ตแล้วจะส่งให้เอง":syncState==="error"?"ส่งไม่สำเร็จ: "+gsErr:(sync.last?"ส่งขึ้นชีตแล้ว ล่าสุด "+hm(sync.last):"เชื่อมแล้ว");
-    h+='<p class="hint'+(syncState==="error"?" bad":"")+'"><span class="dot '+(syncState||"ok")+'"></span>'+esc(st)+'</p>';
-    h+='<div class="foot"><button class="ghost" id="gs-now">ส่งตอนนี้</button><button class="ghost" id="gs-off">เลิกเชื่อม</button></div>';
+    synced={};list.forEach(function(x){synced[x.id]=x.u});
+    state.items=list;
   }
-  if(gsOpen){
-    h+='<div class="field" style="margin-top:10px"><label for="gs-url">วางลิงก์เว็บแอปจาก Apps Script (ลงท้าย /exec)</label><input class="txt" id="gs-url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>'+
-       '<div class="err">'+esc(gsErr)+'</div><div class="foot"><button class="ghost strong" id="gs-go"'+(gsBusy?" disabled":"")+'>'+(gsBusy?"กำลังเชื่อม…":"เชื่อม")+'</button><button class="ghost" id="gs-x">ยกเลิก</button></div>';
+  if(!fromCache)lsSet(SEEN_KEY,String(Date.now()));
+  cloudState=pending?"pending":(fromCache?"pending":"ok");
+  saveLocal();render();pushDiff();
+}
+function onCloudUser(d){
+  d=d||{};
+  if((d.customU||0)>(state.customU||0)&&d.custom){state.custom={out:d.custom.out||[],in:d.custom.in||[]};state.customU=d.customU}
+  syncedCustomU=d.customU||0;
+  connector=d.connector||null;
+  saveLocal();render();if(cloudLoaded)pushDiff();
+}
+function onAuth(u){
+  var was=user;user=u;authErr="";
+  if(u){cloudLoaded=false;fb.watch(u.uid,onCloudItems,onCloudUser)}
+  else{
+    fb.unwatch();connector=null;cloudLoaded=false;synced={};
+    if(was){state={v:1,items:[],custom:{out:[],in:[]},deleted:[]};lsSet(OWNER_KEY,"");lsSet(SEEN_KEY,"");saveLocal()}
+  }
+  render();
+}
+function startFb(){if(fb||!window.__fb)return;fb=window.__fb;fb.onUser(onAuth);render()}
+window.addEventListener("fb-ready",startFb);
+function signIn(){
+  authErr="";
+  fb.signIn().catch(function(e){
+    var c=(e&&e.code)||"";
+    authErr=c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request"?"":c==="auth/network-request-failed"?"ไม่มีเน็ต ต่อเน็ตแล้วลองใหม่":"เข้าสู่ระบบไม่สำเร็จ ("+(c||e)+")";
+    render();
+  });
+}
+function newToken(){var a=new Uint8Array(24);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function accountCard(){
+  var h='<div class="card" id="account"><h2>บัญชี</h2>';
+  if(!fb){h+='<p class="hint">กำลังโหลด… ถ้าไม่มีเน็ตก็ยังจดได้ตามปกติ</p>'}
+  else if(!user){
+    h+='<p class="hint">ตอนนี้ข้อมูลอยู่ในเครื่องนี้อย่างเดียว เข้าสู่ระบบด้วย Gmail แล้วข้อมูลจะเก็บบนคลาวด์ ใช้ได้หลายเครื่อง ล้างเครื่องก็ไม่หาย</p>'+
+       '<div class="foot"><button class="ghost strong" id="ac-in">เข้าสู่ระบบด้วย Google</button></div>'+(authErr?'<div class="err">'+esc(authErr)+'</div>':'');
+  }else{
+    var st=!cloudLoaded?"กำลังโหลดข้อมูล…":cloudState==="pending"?"มีรายการรอส่ง จะส่งให้เองเมื่อต่อเน็ต":cloudState==="error"?"ส่งไม่สำเร็จ: "+cloudErr:"ซิงก์แล้ว";
+    var dot=!cloudLoaded||cloudState==="pending"?"offline":cloudState==="error"?"error":"ok";
+    h+='<p class="hint'+(cloudState==="error"?" bad":"")+'"><span class="dot '+dot+'"></span>'+esc(user.email||"")+' · '+esc(st)+'</p>'+
+       '<div class="foot"><button class="ghost" id="ac-out">ออกจากระบบ</button></div>';
   }
   return h+'</div>';
 }
-function backup(){
-  var blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
-  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="รายรับรายจ่าย-"+today()+".json";
-  document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);
+function claudeCard(){
+  if(!user||!cloudLoaded)return "";
+  var h='<div class="card"><h2>จดผ่าน Claude</h2>';
+  if(!connector){
+    h+='<p class="hint">สร้างลิงก์แล้วเอาไปเพิ่มใน Claude จากนั้นพิมพ์บอก Claude ว่า "ข้าวมันไก่ 60 กาแฟ 55" ก็ลงบัญชีให้เลย หรือถาม "เดือนนี้เงินหายไปไหน"</p>'+
+       '<div class="foot"><button class="ghost strong" id="cl-make">สร้างลิงก์ตัวเชื่อม Claude</button></div>';
+  }else{
+    h+='<p class="hint">ใน claude.ai ไปที่ Settings → Connectors → Add custom connector ตั้งชื่อ "บัญชีเงิน" แล้ววางลิงก์นี้ ใช้ได้ทั้งในคอมและแอป Claude บนมือถือ <b>เก็บลิงก์ไว้คนเดียว</b> ใครได้ไปจะจดลงบัญชีคุณได้</p>'+
+       '<input class="txt" readonly id="cl-url" value="'+esc(MCP_BASE+connector+"/mcp")+'" aria-label="ลิงก์ตัวเชื่อม Claude">'+
+       '<div class="foot"><button class="ghost strong" id="cl-copy">คัดลอกลิงก์</button><button class="ghost" id="cl-off">ยกเลิกลิงก์นี้</button></div>';
+  }
+  if(connErr)h+='<div class="err">'+esc(connErr)+'</div>';
+  return h+'</div>';
 }
-function restore(file){
-  var r=new FileReader();
-  r.onload=function(){
-    try{
-      var d=JSON.parse(r.result);if(!d||!Array.isArray(d.items))throw 0;
-      var have={};state.items.forEach(function(x){have[x.id]=1});
-      if(d.custom)["out","in"].forEach(function(t){(d.custom[t]||[]).forEach(function(k){if(catsOf(t).indexOf(k)<0)state.custom[t].push(k)})});
-      state.customU=Date.now();
-      var n=0;d.items.forEach(function(x){if(x&&x.id&&!have[x.id]&&x.amt>0&&x.date){state.items.push(x);n++}});
-      persist();status="นำเข้า "+n+" รายการ";render();
-    }catch(e){status="ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอปนี้";render()}
-  };
-  r.readAsText(file);
+function bindCloud(){
+  bind("ac-in",signIn);
+  bind("top-in",function(){var a=document.getElementById("account");if(a)a.scrollIntoView({behavior:"smooth"});signIn()});
+  bind("ac-out",function(){var b=document.getElementById("ac-out");if(b.dataset.sure)fb.signOut();else{b.dataset.sure=1;b.textContent="กดอีกครั้งเพื่อออก (ข้อมูลยังอยู่บนคลาวด์)"}});
+  bind("cl-make",function(){connErr="";var t=newToken();fb.connect(user.uid,t).then(function(){connector=t;render()},function(e){connErr="สร้างไม่สำเร็จ: "+(e.code||e.message);render()})});
+  bind("cl-copy",function(){var i=document.getElementById("cl-url"),b=document.getElementById("cl-copy");
+    try{navigator.clipboard.writeText(i.value).then(function(){b.textContent="คัดลอกแล้ว"},function(){i.select();b.textContent="กดค้างที่ลิงก์แล้วคัดลอก"})}catch(e){i.select()}});
+  bind("cl-off",function(){var b=document.getElementById("cl-off");if(!b.dataset.sure){b.dataset.sure=1;b.textContent="กดอีกครั้ง ลิงก์เดิมจะใช้ไม่ได้";return}
+    fb.disconnect(user.uid,connector).then(function(){connector=null;render()},function(e){connErr="ยกเลิกไม่สำเร็จ: "+(e.code||e.message);render()})});
 }
-if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(function(){})}
 
 /* ---------- พูด/พิมพ์ แล้วแยกให้เอง ---------- */
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition||null;
@@ -401,7 +428,7 @@ function showToast(added){
   toast.classList.add("on");
   clearTimeout(toastTimer);toastTimer=setTimeout(hideToast,6000);
   document.getElementById("t-undo").onclick=function(){
-    var ids={};added.forEach(function(x){ids[x.id]=1;state.deleted.push({id:x.id,at:Date.now()})});
+    var ids={};added.forEach(function(x){ids[x.id]=1});
     state.items=state.items.filter(function(x){return !ids[x.id]});
     hideToast();persist();
   };
@@ -418,7 +445,7 @@ function render(){
   var tin=0,tout=0,byCat={};
   items.forEach(function(x){if(x.t==="in")tin+=x.amt;else{tout+=x.amt;byCat[x.cat]=(byCat[x.cat]||0)+x.amt}});
   var h="";
-  h+='<div class="top"><h1>รายรับรายจ่าย</h1><span class="status num'+(/ไม่|อีกเครื่อง/.test(status)?" bad":"")+'">'+esc(status)+'</span></div>';
+  h+='<div class="top"><h1>รายรับรายจ่าย</h1><span class="status num'+(/ไม่|อีกเครื่อง/.test(status)?" bad":"")+'">'+esc(status)+'</span>'+(fb&&!user&&!status?'<button class="ghost slim" id="top-in">เข้าสู่ระบบ</button>':'')+'</div>';
   if(mode==="none")h+='<div class="banner">เบราว์เซอร์นี้เก็บข้อมูลไม่ได้ (อาจเปิดโหมดไม่ระบุตัวตนอยู่) ปิดแอปแล้วข้อมูลจะหาย</div>';
   h+='<div class="month"><button class="iconbtn" id="prev" aria-label="เดือนก่อน">‹</button><b>'+MONTHS[m-1]+" "+(y+543)+'</b><button class="iconbtn" id="next" aria-label="เดือนถัดไป">›</button></div>';
   var bal=tin-tout;
@@ -473,8 +500,8 @@ function render(){
     });
   }
   h+='</div>';
-  h+=gsCard();
-  h+='<div class="card"><h2>สำรองข้อมูล</h2><p class="hint">'+(sync.url?'ข้อมูลอยู่ใน Google Sheets แล้ว ไฟล์สำรองเป็นทางเลือกเสริม':'ข้อมูลเก็บในโทรศัพท์เครื่องนี้เท่านั้น ควรกดสำรองเก็บไว้เดือนละครั้ง ถ้าเปลี่ยนเครื่องให้นำไฟล์สำรองมาใส่')+'</p><div class="foot">'+
+  h+=accountCard()+claudeCard();
+  h+='<div class="card"><h2>สำรองข้อมูล</h2><p class="hint">'+(user?'ข้อมูลอยู่บนคลาวด์แล้ว ไฟล์สำรองเป็นทางเลือกเสริม':'ข้อมูลเก็บในโทรศัพท์เครื่องนี้เท่านั้น ควรกดสำรองเก็บไว้เดือนละครั้ง ถ้าเปลี่ยนเครื่องให้นำไฟล์สำรองมาใส่')+'</p><div class="foot">'+
     (state.items.length?'<button class="ghost" id="bk">บันทึกไฟล์สำรอง</button>':'')+
     '<label class="ghost" for="rs">นำไฟล์สำรองมาใส่</label><input type="file" id="rs" accept=".json,application/json" hidden></div>'+
     (state.items.length?'<div class="foot"><button class="ghost" id="copy">คัดลอกข้อมูลไปวางใน Excel</button></div>':'')+'</div>';
@@ -489,11 +516,7 @@ function render(){
   bind("addIn",function(){openSheet({t:"in"})});
   bind("copy",copyAll);
   bind("bk",backup);
-  bind("gs-open",function(){gsOpen=true;gsErr="";render();var i=document.getElementById("gs-url");if(i)i.focus()});
-  bind("gs-x",function(){gsOpen=false;gsErr="";render()});
-  bind("gs-go",connectGs);
-  bind("gs-now",function(){scheduleSync(0)});
-  bind("gs-off",function(){var b=document.getElementById("gs-off");if(b.dataset.sure){sync={};saveSyncCfg();syncState="";render()}else{b.dataset.sure=1;b.textContent="กดอีกครั้งเพื่อเลิกเชื่อม"}});
+  bindCloud();
   var rs=document.getElementById("rs");if(rs)rs.addEventListener("change",function(){if(rs.files[0])restore(rs.files[0])});
   root.querySelectorAll(".item").forEach(function(b){
     b.addEventListener("click",function(){
@@ -586,7 +609,6 @@ function drawSheet(){
   if(del)del.addEventListener("click",function(){
     if(!del.classList.contains("sure")){del.classList.add("sure");del.textContent="กดอีกครั้งเพื่อยืนยันลบ";return}
     state.items=state.items.filter(function(x){return x.id!==c.id});
-    state.deleted.push({id:c.id,at:Date.now()});
     closeSheet();render();persist();
   });
 }
@@ -610,8 +632,59 @@ function save(){
 }
 
 render();
-scheduleSync(0);
+startFb();
 })();
+</script>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,onSnapshot,writeBatch} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+const host=location.hostname;
+const app=initializeApp({
+  apiKey:"AIzaSyBaQqPCcr0s7R1eYxZAHe2dTumau0QgPjI",
+  authDomain:(host.endsWith(".web.app")||host.endsWith(".firebaseapp.com"))?host:"thanot-money.firebaseapp.com",
+  projectId:"thanot-money",appId:"1:263732686831:web:d5d40ef8962f788ec3101a",messagingSenderId:"263732686831"
+});
+const auth=getAuth(app);
+let db;
+try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})})}catch(e){db=initializeFirestore(app,{})}
+let unsubs=[];
+const clean=x=>({t:x.t,amt:x.amt,cat:x.cat,date:x.date,note:x.note||"",ts:x.ts||0,u:x.u||0,src:x.src||""});
+window.__fb={
+  async signIn(){
+    const p=new GoogleAuthProvider();p.setCustomParameters({prompt:"select_account"});
+    const standalone=matchMedia("(display-mode: standalone)").matches||navigator.standalone;
+    if(standalone)return signInWithRedirect(auth,p);
+    try{await signInWithPopup(auth,p)}
+    catch(e){if(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment")return signInWithRedirect(auth,p);throw e}
+  },
+  signOut:()=>signOut(auth),
+  onUser:cb=>onAuthStateChanged(auth,cb),
+  watch(uid,onItems,onUser){
+    unsubs.forEach(f=>f());
+    unsubs=[
+      onSnapshot(collection(db,"users",uid,"items"),{includeMetadataChanges:true},s=>onItems(s.docs.map(d=>Object.assign({id:d.id},d.data())),s.metadata.hasPendingWrites,s.metadata.fromCache)),
+      onSnapshot(doc(db,"users",uid),s=>onUser(s.exists()?s.data():null))
+    ];
+  },
+  unwatch(){unsubs.forEach(f=>f());unsubs=[]},
+  async write(uid,puts,dels,userData){
+    const ops=[...puts.map(x=>["set",x]),...dels.map(id=>["del",id])];
+    if(userData)ops.push(["user",userData]);
+    for(let i=0;i<ops.length;i+=400){
+      const b=writeBatch(db);
+      ops.slice(i,i+400).forEach(([k,v])=>{
+        if(k==="set")b.set(doc(db,"users",uid,"items",v.id),clean(v));
+        else if(k==="del")b.delete(doc(db,"users",uid,"items",v));
+        else b.set(doc(db,"users",uid),v,{merge:true});
+      });
+      await b.commit();
+    }
+  },
+  async connect(uid,token){const b=writeBatch(db);b.set(doc(db,"connectors",token),{uid,created:Date.now()});b.set(doc(db,"users",uid),{connector:token},{merge:true});await b.commit()},
+  async disconnect(uid,token){const b=writeBatch(db);b.delete(doc(db,"connectors",token));b.set(doc(db,"users",uid),{connector:null},{merge:true});await b.commit()}
+};
+window.dispatchEvent(new Event("fb-ready"));
 </script>
 </body>
 </html>
